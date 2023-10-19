@@ -5,11 +5,11 @@ import datetime
 import numpy as np
 
 conn = redshift_connector.connect(
-     host='redshift-cluster-datawarehouse.cew9a5azwld4.us-east-1.redshift.amazonaws.com',
-     database='test',
-     port=5439,
-     user='user_test',
-     password='Password123'
+     host='host-dummy',
+     database='database-dummy',
+     port=1234,
+     user='user-dummy',
+     password='pass-dummy'
   )
 
 cursor = conn.cursor()
