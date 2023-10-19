@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import redshift_connector
 import datetime
+from dateutil.relativedelta import relativedelta 
 
 
 conn = redshift_connector.connect(
@@ -26,44 +27,83 @@ def get_activatation_date(threshold: int):
     cursor.execute(raw_sql)
     return cursor.fetchall()
 
-def percentage_by_month(successfull_conversations: tuple, threshold: int):
-    if not len(successfull_conversations):
-        return 0.0
-    return (len([x for x in successfull_conversations if(x[0] > threshold)]) * 100) / len(successfull_conversations) 
+def get_cummulative_conversations_by_week(companies_ids: list[int]):
+    raw_sql = f'''
+        with cummulative_successful_conversations as (
+            select sum(c.total) as total, date_trunc('week', c.date)::date as week, cmp.company_id from conversations c inner join company_identifiers cmp on cmp.account_identifier = c.account_id where company_id in ({str(companies_ids)[1:-1]}) and successful = true group by c.date, cmp.company_id order by week asc
+        ) select sum(total), week, company_id as successful_conversations from cummulative_successful_conversations group by week, company_id order by week asc
+    '''
+    cursor.execute(raw_sql)
+    return cursor.fetchall()
 
-# Generate dates for the plot
-def get_date_with_months(intial_year: int, intial_month: int, months: int):
-    months_summary = intial_month + months
-    calculated_month = months_summary % 12 if months_summary != 12 else 12
-    calculated_year = intial_year + (months_summary // 12 ) - (months_summary % 12 == 0)
-    return (calculated_year, calculated_month)
 
-def generate_dates():
-    year = 2023
-    start_month = 1
-    end_month = 10
+def amount_count_by_company(company_id, curr_date, activation_dates):
+    
 
-    generated_dates = []
+    if(curr_date >= activation_dates[company_id] and curr_date <= activation_dates[company_id] + relativedelta(months=2)):
+        return True
+    
+    return False
 
-    for delta_months in range(end_month - start_month + 1):
-        curr_year, curr_month = get_date_with_months(year, start_month, delta_months)
-        next_year, next_month = get_date_with_months(year, start_month, delta_months + 1)
-        generated_dates.append((datetime.datetime(curr_year, curr_month, 1).strftime('%Y-%m-%d'),datetime.datetime(next_year, next_month, 1).strftime('%Y-%m-%d')))
+def flat_weeks_per_company():
+    companies_with_activate_date = get_activatation_date(350)
+    activation_dates = {}
+    companies_ids =  [company[0] for company in companies_with_activate_date]
+    for company in companies_with_activate_date:
+        companies_ids.append(company[0])
+        activation_dates[company[0]] = company[1]
 
-    return generated_dates
+    data = get_cummulative_conversations_by_week(companies_ids)
+    weeks = []
+    successfull_company = []
+    cummulative_successful_companies = 0
+    cummulative_by_companies = {}
+    threshold_state_by_company = {}
+    for x in data:
+        amount, week_of_data, company_id = x
+        if amount_count_by_company(company_id, week_of_data, activation_dates):
+            if company_id in cummulative_by_companies: 
+                cummulative_by_companies[company_id] += amount 
+            else:
+                cummulative_by_companies[company_id] = amount
 
-def generate_graph_task_two():
-    x = []
-    y = []
-    for curr_date, next_date in generate_dates():
-        x.append(curr_date)
-        y.append(percentage_by_month(get_data_by_month(next_date, curr_date), 1500))
+            if cummulative_by_companies[company_id] > 500 and not company_id in threshold_state_by_company:
+                threshold_state_by_company[company_id] = True
+                cummulative_successful_companies += 1
 
-    plt.figure(figsize = (15, 10))
+        weeks.append(week_of_data.strftime('%Y-%m-%d'))
+        successfull_company.append(cummulative_successful_companies)
+    
+    result = {
+        'weeks': [],
+        'successfull_companies': []
+    }
+
+    idx = 0
+    while idx < len(weeks) - 1:
+        while(weeks[idx] == weeks[idx + 1]):
+            idx += 1
+        result['weeks'].append(weeks[idx])
+        result['successfull_companies'].append(successfull_company[idx])
+        idx += 1
+    result['weeks'].append(weeks[idx])
+    result['successfull_companies'].append(successfull_company[idx])
+
+    return result
+
+def generate_graph_task_one():
+    data = flat_weeks_per_company()
+    x = data['weeks']
+    y = data['successfull_companies']
+
+    plt.figure(figsize = (20, 10))
     plt.grid(which='major', axis='both', linestyle='--', color='gray', linewidth=1)
     plt.plot(x,y, 'go-')
-    plt.title("Percentage of successfull companies over time ")
-    plt.xlabel('Dates')
-    plt.ylabel('Percentage')
+    plt.title("Cummulative successfull companies over time ")
+    plt.xlabel('Weeks')
+    plt.xticks(rotation=90)
+    plt.ylabel('Cummulative')
 
-    plt.savefig("task_two.png")
+    plt.savefig("task_one.png")
+    
+generate_graph_task_one()
